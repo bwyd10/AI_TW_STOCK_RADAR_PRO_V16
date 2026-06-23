@@ -18,13 +18,14 @@ from sepa import calculate_sepa
 from chip import summarize_institutional
 from fundamental import get_fundamental, fundamental_score
 from advisor import generate_advisor_summary
+from blackhorse import calculate_blackhorse
 from utils import grade, safe_round
 
-APP_TITLE_V14 = "AI台股雷達 PRO v15.2｜世界冠軍版"
+APP_TITLE_V16 = "AI台股雷達 PRO v16.0｜世界冠軍黑馬版"
 
-st.set_page_config(page_title=APP_TITLE_V14, page_icon="🏆", layout="wide")
-st.title("🏆 AI台股雷達 PRO v15.2｜世界冠軍版")
-st.caption("Minervini SEPA｜CANSLIM｜VCP｜RS強度｜法人籌碼｜極簡Excel決策報告")
+st.set_page_config(page_title=APP_TITLE_V16, page_icon="🏆", layout="wide")
+st.title("🏆 AI台股雷達 PRO v16.0｜世界冠軍黑馬版")
+st.caption("Minervini SEPA｜CANSLIM｜VCP｜RS強度｜法人籌碼｜黑馬指數｜極簡Excel決策報告")
 
 
 # =========================================================
@@ -299,7 +300,15 @@ def diagnose_stock(stock_id, stock_info_dict, inst_df):
         "_fundamental_details": fs["fundamental_details"],
     }
 
-    return enrich_minervini_fields(result)
+    result = enrich_minervini_fields(result)
+
+    # PRO v16.0：黑馬預警系統
+    blackhorse = calculate_blackhorse(result)
+    result["黑馬指數"] = blackhorse.get("黑馬指數", 0)
+    result["爆發機率"] = blackhorse.get("爆發機率", "")
+    result["黑馬評級"] = blackhorse.get("黑馬評級", "一般觀察")
+
+    return result
 
 
 # =========================================================
@@ -309,7 +318,7 @@ def diagnose_stock(stock_id, stock_info_dict, inst_df):
 def render_advisor(result):
     advisor = generate_advisor_summary(result)
     st.subheader("🏆 AI投資顧問")
-    a1, a2, a3, a4 = st.columns([2, 1, 1, 1])
+    a1, a2, a3, a4, a5 = st.columns([2, 1, 1, 1, 1])
     with a1:
         st.markdown(f"## {advisor['stars']}")
         st.markdown(f"### AI評級：{advisor['rating']}")
@@ -318,8 +327,12 @@ def render_advisor(result):
     with a3:
         st.metric("AI冠軍分數", result.get("AI冠軍分數", 0))
     with a4:
-        st.metric("投資建議", advisor["action"])
+        st.metric("黑馬指數", result.get("黑馬指數", 0))
+    with a5:
+        st.metric("爆發機率", result.get("爆發機率", ""))
     st.info(advisor["comment"])
+    st.success(f"黑馬評級：{result.get('黑馬評級', '一般觀察')}｜黑馬指數：{result.get('黑馬指數', 0)}｜爆發機率：{result.get('爆發機率', '')}")
+    st.metric("投資建議", advisor["action"])
 
     st.subheader("🚦 五大燈號")
     l1, l2, l3, l4, l5 = st.columns(5)
@@ -337,12 +350,13 @@ def render_advisor(result):
 
 def render_professional(result):
     st.subheader("📊 專業數據")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("SEPA技術分", result["SEPA技術分"])
     c2.metric("AI冠軍分數", result.get("AI冠軍分數", 0))
-    c3.metric("法人籌碼分", result["法人籌碼分"])
-    c4.metric("財務品質分", result["財務品質分"])
-    c5.metric("距52週高點%", result.get("距52週高點%", np.nan))
+    c3.metric("黑馬指數", result.get("黑馬指數", 0))
+    c4.metric("法人籌碼分", result["法人籌碼分"])
+    c5.metric("財務品質分", result["財務品質分"])
+    c6.metric("距52週高點%", result.get("距52週高點%", np.nan))
 
     with st.expander("完整資料表", expanded=False):
         main_cols = [k for k in result.keys() if not k.startswith("_")]
@@ -401,14 +415,14 @@ def _sort_world_champion(df):
     if df is None or df.empty:
         return pd.DataFrame()
     sort_cols = [
-        "AI冠軍分數", "SEPA總分", "RS強度",
+        "黑馬指數", "AI冠軍分數", "SEPA總分", "RS強度",
         "法人籌碼分", "距52週高點%", "ROE%", "營收成長%",
     ]
     for c in sort_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     use_cols = [c for c in sort_cols if c in df.columns]
-    ascending = [False, False, False, False, True, False, False][: len(use_cols)]
+    ascending = [False, False, False, False, False, True, False, False][: len(use_cols)]
     return df.sort_values(use_cols, ascending=ascending).reset_index(drop=True)
 
 
@@ -448,12 +462,12 @@ def build_price_bucket_top10(result_df, top_n=10):
 
 
 # =========================================================
-# PRO v15.2 Excel 極簡報告工具
+# PRO v16.0 Excel 極簡報告工具
 # =========================================================
 
 SIMPLE_REPORT_COLS = [
     "排名", "股票代號", "股票名稱", "收盤價", "主流族群",
-    "AI冠軍分數", "AI評級", "投資建議", "AI白話解讀",
+    "黑馬指數", "爆發機率", "黑馬評級", "AI冠軍分數", "AI評級", "投資建議", "AI白話解讀",
 ]
 
 FINAL_EXCEL_COL_RENAME = {
@@ -463,11 +477,11 @@ FINAL_EXCEL_COL_RENAME = {
     "主流族群": "族群",
 }
 
-# 使用者指定 Excel 最終欄位：
-# 排名｜代號｜名稱｜股價｜族群｜AI冠軍分數｜AI評級｜投資建議｜AI白話解讀
+# PRO v16.0 Excel 最終欄位：
+# 排名｜代號｜名稱｜股價｜族群｜黑馬指數｜爆發機率｜黑馬評級｜AI冠軍分數｜AI評級｜投資建議｜AI白話解讀
 FINAL_EXCEL_COLS = [
     "排名", "代號", "名稱", "股價", "族群",
-    "AI冠軍分數", "AI評級", "投資建議", "AI白話解讀",
+    "黑馬指數", "爆發機率", "黑馬評級", "AI冠軍分數", "AI評級", "投資建議", "AI白話解讀",
 ]
 
 
@@ -683,7 +697,7 @@ elif mode == "冠軍股排行":
                 st.download_button(
                     "下載冠軍股排行 Excel",
                     data=buffer.getvalue(),
-                    file_name=f"PRO_v15_2_冠軍股排行_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"PRO_v16_0_冠軍股排行_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
@@ -693,7 +707,7 @@ elif mode == "冠軍股排行":
 # =========================================================
 
 else:
-    st.subheader("🔎 世界冠軍股掃描器｜PRO v15.2 極簡決策報告")
+    st.subheader("🔎 世界冠軍股掃描器｜PRO v16.0 極簡決策報告")
     st.info("此模式會逐檔診斷上市櫃股票，第一次全市場掃描會比較久；掃過的資料會被 Streamlit 快取。")
 
     watchlist_codes = [x.strip() for x in watchlist_text.replace(",", "\n").splitlines() if x.strip()]
@@ -710,7 +724,7 @@ else:
     s2.metric("最低AI冠軍分數", min_champion_score)
     s3.metric("距52週高點以內", f"{near_high_pct}%")
 
-    if st.button("開始 PRO v15.2 世界冠軍股掃描", type="primary"):
+    if st.button("開始 PRO v16.0 世界冠軍股掃描", type="primary"):
         if not scan_codes:
             st.warning("沒有可掃描的股票。")
         else:
@@ -755,7 +769,7 @@ else:
                     pd.to_numeric(result_df["距52週高點%"], errors="coerce") <= 5
                 ]
 
-                # PRO v15.2：Excel 只輸出 9 欄極簡決策報告。
+                # PRO v16.0：Excel 只輸出 9 欄極簡決策報告。
                 champion_top30 = _simple_rank(result_df, SIMPLE_REPORT_COLS, top_n=30)
                 price_buckets_simple = _price_bucket_simple(result_df, price_top_n)
                 breakout_simple = _breakout_simple(result_df)
@@ -814,14 +828,14 @@ else:
                     _write_excel_sheet(writer, price_buckets_simple.get("500元以上 TOP10"), "500以上TOP10")
                     _write_excel_sheet(writer, breakout_simple, "即將突破名單")
                     _write_excel_sheet(writer, institution_simple, "法人追蹤榜")
-                    # PRO v15.2：Excel 只輸出使用者指定的 9 欄，
+                    # PRO v16.0：Excel 只輸出使用者指定的 9 欄，
                     # 不再輸出完整分析與掃描失敗表，避免報表又出現大量專有名詞。
                     _format_excel_workbook(writer)
                 buffer.seek(0)
                 st.download_button(
-                    "下載 PRO v15.2 世界冠軍極簡報告 Excel",
+                    "下載 PRO v16.0 世界冠軍極簡報告 Excel",
                     data=buffer.getvalue(),
-                    file_name=f"PRO_v15_2_世界冠軍極簡報告_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"PRO_v16_0_世界冠軍極簡報告_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
